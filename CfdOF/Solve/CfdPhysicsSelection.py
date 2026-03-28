@@ -187,7 +187,27 @@ class CfdPhysicsModel:
             QT_TRANSLATE_NOOP("App::Property", "Turbulence model"),
         ):
             obj.TurbulenceModel = "kOmegaSST"
-
+            
+        
+        # Store user-modified turbulence coefficients (only overrides)
+        addObjectProperty(
+            obj,
+            "TurbulenceModelCoeffs",
+            {},
+            "App::PropertyMap",
+            "Physics modelling",
+            QT_TRANSLATE_NOOP("App::Property", "Custom turbulence model coefficients"),
+            )
+        # Whether to print coefficients in OpenFOAM
+        addObjectProperty(
+            obj,
+            "PrintCoeffs",
+            False,
+            "App::PropertyBool",
+            "Physics modelling",
+            QT_TRANSLATE_NOOP("App::Property", "Print turbulence model coefficients"),
+            )
+        
         # Gravity
         addObjectProperty(
             obj,
@@ -197,6 +217,7 @@ class CfdPhysicsModel:
             "Physics modelling",
             QT_TRANSLATE_NOOP("App::Property", "Gravitational acceleration vector (x component)"),
         )
+        
         addObjectProperty(
             obj,
             "gy",

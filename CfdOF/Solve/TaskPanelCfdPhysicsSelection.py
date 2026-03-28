@@ -49,6 +49,7 @@ class TaskPanelCfdPhysicsSelection:
         self.form = FreeCADGui.PySideUic.loadUi(os.path.join(CfdTools.getModulePath(), 'Gui', "TaskPanelPhysics.ui"))
 
         self.form.radioButtonSteady.toggled.connect(self.updateUI)
+        self.form.cb_turbulence_model.currentIndexChanged.connect(self.onModelChanged)
         self.form.radioButtonTransient.toggled.connect(self.updateUI)
         self.form.radioButtonSinglePhase.toggled.connect(self.updateUI)
         self.form.radioButtonFreeSurface.toggled.connect(self.updateUI)
@@ -121,7 +122,7 @@ class TaskPanelCfdPhysicsSelection:
         setQuantity(self.form.inputSRFRPM, self.obj.SRFModelRPM)
 
         self.updateUI()
-
+        
     def updateUI(self):
         self.form.TimeFrame.setVisible(True)
         self.form.FlowFrame.setVisible(True)
@@ -140,64 +141,149 @@ class TaskPanelCfdPhysicsSelection:
             self.form.radioButtonFreeSurface.setEnabled(True)
             self.form.radioButtonDES.setEnabled(True)
             self.form.radioButtonLES.setEnabled(True)
-
+    
         # Gravity
         self.form.gravityFrame.setEnabled(
             self.form.radioButtonFreeSurface.isChecked() or
-            (not self.form.checkBoxIsothermal.isChecked() and not self.form.checkBoxHighMach.isChecked()))
-
+            (not self.form.checkBoxIsothermal.isChecked() and not self.form.checkBoxHighMach.isChecked())
+        )
+    
         # SRF model
         srf_capable = (self.form.radioButtonSteady.isChecked() and self.form.checkBoxIsothermal.isChecked())
-        srf_should_be_unchecked = ((not self.form.checkBoxIsothermal.isChecked()) 
-                                   or self.form.radioButtonTransient.isChecked()
-                                   or self.form.radioButtonFreeSurface.isChecked())
+        srf_should_be_unchecked = (
+            (not self.form.checkBoxIsothermal.isChecked()) or
+            self.form.radioButtonTransient.isChecked() or
+            self.form.radioButtonFreeSurface.isChecked()
+        )
         self.form.srfCheckBox.setEnabled(srf_capable)
         if srf_should_be_unchecked:
             self.form.srfCheckBox.setChecked(False)
         self.form.srfFrame.setEnabled(self.form.srfCheckBox.isChecked())
-
+    
         # Free surface
         if self.form.radioButtonFreeSurface.isChecked():
             self.form.checkBoxIsothermal.setChecked(True)
             self.form.checkBoxIsothermal.setEnabled(False)
         else:
             self.form.checkBoxIsothermal.setEnabled(True)
-
+    
         # High Mach capability
         self.form.checkBoxHighMach.setEnabled(not self.form.checkBoxIsothermal.isChecked())
         if self.form.checkBoxIsothermal.isChecked():
             self.form.checkBoxHighMach.setChecked(False)
-
-        # Viscous 
+    
+        # =========================
+        # 🔥 NEW DYNAMIC LOGIC
+        # =========================
+    
         if self.form.viscousCheckBox.isChecked():
             self.form.turbulenceFrame.setVisible(True)
-            # RANS
+            
+             # Choose model list
+            models = []
+    
+            # Choose model list
             if self.form.radioButtonRANS.isChecked():
-                self.form.turbulenceComboBox.clear()
-                self.form.turbulenceComboBox.addItems(RANS_MODELS)
-                ti = CfdTools.indexOrDefault(RANS_MODELS, self.obj.TurbulenceModel, 0)
-                self.form.turbulenceComboBox.setCurrentIndex(ti)
-                self.form.turbulenceModelFrame.setVisible(True)
-            #DES
+                models = RANS_MODELS
             elif self.form.radioButtonDES.isChecked():
-                self.form.turbulenceComboBox.clear()
-                self.form.turbulenceComboBox.addItems(DES_MODELS)
-                ti = CfdTools.indexOrDefault(DES_MODELS, self.obj.TurbulenceModel, 0)
-                self.form.turbulenceComboBox.setCurrentIndex(ti)
-                self.form.turbulenceModelFrame.setVisible(True)
-            # LES
+                models = DES_MODELS
             elif self.form.radioButtonLES.isChecked():
-                self.form.turbulenceComboBox.clear()
-                self.form.turbulenceComboBox.addItems(LES_MODELS)
-                ti = CfdTools.indexOrDefault(LES_MODELS, self.obj.TurbulenceModel, 0)
-                self.form.turbulenceComboBox.setCurrentIndex(ti)
-                self.form.turbulenceModelFrame.setVisible(True)
-            else:
-                self.form.turbulenceModelFrame.setVisible(False)
-                self.form.turbulenceComboBox.clear()
+                models = LES_MODELS
+    
+            # Populate dropdown
+            self.form.cb_turbulence_model.blockSignals(True)
+            self.form.cb_turbulence_model.clear()
+            self.form.cb_turbulence_model.addItems(models)
+    
+            # Set selected model
+            if models:
+                ti = CfdTools.indexOrDefault(models, self.obj.TurbulenceModel, 0)
+                self.form.cb_turbulence_model.setCurrentIndex(ti)
+            
+            self.form.cb_turbulence_model.blockSignals(False)
+        
         else:
             self.form.turbulenceFrame.setVisible(False)
-            self.form.turbulenceModelFrame.setVisible(False)
+    
+
+    #def updateUI(self):
+    #    self.form.TimeFrame.setVisible(True)
+    #    self.form.FlowFrame.setVisible(True)
+    #    self.form.turbulenceFrame.setVisible(True)
+#
+    #    # Steady / transient
+    #if self.form.radioButtonSteady.isChecked():
+    #        self.form.radioButtonFreeSurface.setEnabled(False)
+    #        if self.form.radioButtonDES.isChecked() or self.form.radioButtonLES.isChecked():
+    #            self.form.radioButtonRANS.toggle()
+    #        self.form.radioButtonDES.setEnabled(False)
+    #        self.form.radioButtonLES.setEnabled(False)
+    #        if self.form.radioButtonFreeSurface.isChecked():
+    #            self.form.radioButtonSinglePhase.toggle()
+    #    else:
+    #        self.form.radioButtonFreeSurface.setEnabled(True)
+    #        self.form.radioButtonDES.setEnabled(True)
+    #        self.form.radioButtonLES.setEnabled(True)
+#
+    #    # Gravity
+    #    self.form.gravityFrame.setEnabled(
+    #        self.form.radioButtonFreeSurface.isChecked() or
+    #        (not self.form.checkBoxIsothermal.isChecked() and not self.form.checkBoxHighMach.isChecked()))
+#
+    #    # SRF model
+    #    srf_capable = (self.form.radioButtonSteady.isChecked() and self.form.checkBoxIsothermal.isChecked())
+    #    srf_should_be_unchecked = ((not self.form.checkBoxIsothermal.isChecked()) 
+    #                               or self.form.radioButtonTransient.isChecked()
+    #                               or self.form.radioButtonFreeSurface.isChecked())
+    #    self.form.srfCheckBox.setEnabled(srf_capable)
+    #    if srf_should_be_unchecked:
+    #        self.form.srfCheckBox.setChecked(False)
+    #    self.form.srfFrame.setEnabled(self.form.srfCheckBox.isChecked())
+#
+    #    # Free surface
+    #    if self.form.radioButtonFreeSurface.isChecked():
+    #        self.form.checkBoxIsothermal.setChecked(True)
+    #        self.form.checkBoxIsothermal.setEnabled(False)
+    #    else:
+    #        self.form.checkBoxIsothermal.setEnabled(True)
+#
+    #    # High Mach capability
+    #    self.form.checkBoxHighMach.setEnabled(not self.form.checkBoxIsothermal.isChecked())
+    #    if self.form.checkBoxIsothermal.isChecked():
+    #        self.form.checkBoxHighMach.setChecked(False)
+#
+        # Viscous 
+    #    if self.form.viscousCheckBox.isChecked():
+    #        self.form.turbulenceFrame.setVisible(True)
+    #        # RANS
+    #        if self.form.radioButtonRANS.isChecked():
+    #            #self.form.turbulenceComboBox.clear()
+    #            #self.form.turbulenceComboBox.addItems(RANS_MODELS)
+    #            ti = CfdTools.indexOrDefault(RANS_MODELS, self.obj.TurbulenceModel, 0)
+    #            #self.form.turbulenceComboBox.setCurrentIndex(ti)
+    #            #self.form.turbulenceModelFrame.setVisible(True)
+    #        #DES
+    #        elif self.form.radioButtonDES.isChecked():
+    #            #self.form.turbulenceComboBox.clear()
+    #            #self.form.turbulenceComboBox.addItems(DES_MODELS)
+    #            ti = CfdTools.indexOrDefault(DES_MODELS, self.obj.TurbulenceModel, 0)
+    #            #self.form.turbulenceComboBox.setCurrentIndex(ti)
+    #            #self.form.turbulenceModelFrame.setVisible(True)
+    #        # LES
+    #        elif self.form.radioButtonLES.isChecked():
+    #            #self.form.turbulenceComboBox.clear()
+    #            #self.form.turbulenceComboBox.addItems(LES_MODELS)
+    #            ti = CfdTools.indexOrDefault(LES_MODELS, self.obj.TurbulenceModel, 0)
+    #            #self.form.turbulenceComboBox.setCurrentIndex(ti)
+    #            #self.form.turbulenceModelFrame.setVisible(True)
+    #        else:
+    #            #self.form.turbulenceModelFrame.setVisible(False)
+    #            #self.form.turbulenceComboBox.clear()
+    #            pass
+    #    else:
+    #        self.form.turbulenceFrame.setVisible(False)
+    #        
+    #        #self.form.turbulenceModelFrame.setVisible(False)
 
     def accept(self):
         doc = FreeCADGui.getDocument(self.obj.Document)
@@ -231,7 +317,8 @@ class TaskPanelCfdPhysicsSelection:
                     storeIfChanged(self.obj, 'Turbulence', 'DES')
                 elif self.form.radioButtonLES.isChecked():
                     storeIfChanged(self.obj, 'Turbulence', 'LES')
-                storeIfChanged(self.obj, 'TurbulenceModel', self.form.turbulenceComboBox.currentText())
+                #storeIfChanged(self.obj, 'TurbulenceModel', self.form.turbulenceComboBox.currentText())
+                storeIfChanged(self.obj, 'TurbulenceModel', self.form.cb_turbulence_model.currentText())
         else:
             storeIfChanged(self.obj, 'Turbulence', 'Inviscid')
 
@@ -260,3 +347,7 @@ class TaskPanelCfdPhysicsSelection:
     def closing(self):
         # We call this from unsetEdit to allow cleanup
         return
+    
+    
+    def onModelChanged(self):
+        self.obj.TurbulenceModel = self.form.cb_turbulence_model.currentText()
