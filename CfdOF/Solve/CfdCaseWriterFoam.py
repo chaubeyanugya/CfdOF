@@ -34,6 +34,8 @@ from CfdOF.TemplateBuilder import TemplateBuilder
 from CfdOF.CfdTools import cfdMessage
 from CfdOF.Mesh import CfdMeshTools
 from CfdOF.Mesh import CfdDynamicMeshRefinement
+from CfdOF.Solve.CfdTurbulenceModels import getModelCoefficients, getOfKeyword, getSimulationType
+
 
 class CfdCaseWriterFoam:
     def __init__(self, analysis_obj):
@@ -95,6 +97,32 @@ class CfdCaseWriterFoam:
             raise RuntimeError("No mesh object found in analysis")
         phys_settings = CfdTools.propsToDict(self.physics_model)
 
+       # ---------------------------------------------------------------
+        # WEEK 4: Resolve turbulence model coefficients for template use
+        # ---------------------------------------------------------------
+        turb_model   = getattr(self.physics_model, 'TurbulenceModel', 'kOmegaSST')
+        saved_coeffs = getattr(self.physics_model, 'TurbulenceModelCoeffs', {})
+        print_coeffs = getattr(self.physics_model, 'PrintCoeffs', False)
+
+        defaults = getModelCoefficients(turb_model)
+
+        # Merge: user overrides win; fall back to defaults from CfdTurbulenceModels
+        merged_coeffs = {
+            k: float(saved_coeffs[k]) if k in saved_coeffs else v
+            for k, v in defaults.items()
+        }
+
+        # Pre-format coefficients as a single string block for the template engine
+        coeffs_lines = '\n'.join(
+            '        {:<20} {};'.format(k, v)
+            for k, v in merged_coeffs.items()
+        )
+
+        phys_settings['TurbulenceModelKeyword']   = getOfKeyword(turb_model)
+        phys_settings['TurbulenceSimulationType'] = getSimulationType(turb_model)
+        phys_settings['TurbulenceModelCoeffsBlock'] = coeffs_lines
+        phys_settings['PrintCoeffs']              = 'on' if print_coeffs else 'off'
+        # ---------------------------------------------------------------
         # Validate BC labels
         bc_labels = [b.Label for b in self.bc_group]
         for i, l in enumerate(bc_labels):
@@ -104,7 +132,7 @@ class CfdCaseWriterFoam:
             for j in range(i+1, len(bc_labels)):
                 if bc_labels[j] == l:
                     raise ValueError("Boundary condition label '" + bc_labels[i] + "' is duplicated")
-        
+
         self.settings = {
             'physics': phys_settings,
             'fluidProperties': [],  # Order is important, so use a list
@@ -134,7 +162,6 @@ class CfdCaseWriterFoam:
             'runChangeDictionary': False
             }
 
-
         mr_objs = CfdTools.getMeshRefinementObjs(self.mesh_obj)
         for mr_id, mr_obj in enumerate(mr_objs):
             # moving mesh
@@ -144,8 +171,8 @@ class CfdCaseWriterFoam:
                     'MMRModelAxis': mr_obj.MMRModelAxis,
                     't_MMRModelCoR': tuple(Units.Quantity(p, Units.Length).getValueAs('m') for p in mr_obj.MMRModelCoR),
                     't_MMRModelAxis': tuple(d for d in mr_obj.MMRModelAxis),
-                    'MMRModelRPM': mr_obj.MMRModelRPM,# revolution per minute
-                    'MMRModelRPS': (mr_obj.MMRModelRPM/9.5) # rad/s #for the openCFD version
+                    'MMRModelRPM': mr_obj.MMRModelRPM,
+                    'MMRModelRPS': (mr_obj.MMRModelRPM/9.5)
                 }
 
         if len(self.settings["MovingMeshRegions"]) > 0:
@@ -250,7 +277,6 @@ class CfdCaseWriterFoam:
         else:
             raise RuntimeError(self.physics_model.Phase + " phase model currently not supported.")
 
-        # Catch-all in case
         if solver is None:
             raise RuntimeError("No solver is supported to handle the selected physics with {} phases.".format(
                 len(self.material_objs)))
@@ -285,7 +311,6 @@ class CfdCaseWriterFoam:
         elif CfdTools.getFoamRuntime() == 'BlueCFD2':
             system_settings['FoamVersion'] = os.path.split(installation_path)[-1].lstrip('OpenFOAM-')
         elif CfdTools.getFoamRuntime() == 'BlueCFD':
-            # search for OpenFOAM-XX
             with os.scandir('{}'.format(installation_path)) as dirs:
                 for dir in dirs:
                     if dir.is_dir() and dir.name.startswith('OpenFOAM-'):
@@ -298,17 +323,13 @@ class CfdCaseWriterFoam:
             CfdTools.convertMesh(self.case_folder, updated_mesh_path, scale)
 
     def processFluidProperties(self):
-        # self.material_obj currently stores everything as a string
-        # Convert to (mostly) SI numbers for OpenFOAM
         settings = self.settings
         for material_obj in self.material_objs:
             mp = material_obj.Material
             mp['Name'] = material_obj.Label
-            # Add type if absent
             mat_type = mp.get('Type', 'Isothermal')
             mp['Type'] = mat_type
 
-            # Check compatibility between physics and material type
             flow_type = self.physics_model.Flow
             if ((flow_type == 'Isothermal') != (mat_type == 'Isothermal')) or \
                (flow_type == 'HighMachCompressible' and mat_type != 'Compressible'):
@@ -324,7 +345,6 @@ class CfdCaseWriterFoam:
                     mp['DynamicViscosity'] = Units.Quantity(mp['DynamicViscosity']).getValueAs("kg/m/s").Value
                 mp['KinematicViscosity'] = mp['DynamicViscosity']/mp['Density']
             if 'MolarMass' in mp:
-                # OpenFOAM uses kg/kmol
                 mp['MolarMass'] = Units.Quantity(mp['MolarMass']).getValueAs("kg/mol").Value*1000
             if 'Cp' in mp:
                 mp['Cp'] = Units.Quantity(mp['Cp']).getValueAs("J/kg/K").Value
@@ -349,7 +369,6 @@ class CfdCaseWriterFoam:
 
     def processBoundaryConditions(self):
         """ Compute any quantities required before case build """
-        # Copy keys so that we can delete while iterating
         settings = self.settings
         bc_names = list(settings['boundaries'].keys())
         for bc_name in bc_names:
@@ -362,7 +381,6 @@ class CfdCaseWriterFoam:
                     face = bc['ShapeRefs'][0][0].Name
                 if not face[0]:
                     raise RuntimeError(str("No face specified for velocity direction in boundary '" + bc_name + "'"))
-                # See if entered face actually exists and is planar
                 try:
                     selected_object = self.analysis_obj.Document.getObject(face[0])
                     if hasattr(selected_object, "Shape"):
@@ -390,13 +408,11 @@ class CfdCaseWriterFoam:
             if bc['PorousBaffleMethod'] == 'porousScreen':
                 wireDiam = bc['ScreenWireDiameter']
                 spacing = bc['ScreenSpacing']
-                CD = 1.0  # Drag coeff of wire (Simmons - valid for Re > ~300)
+                CD = 1.0
                 beta = (1-wireDiam/spacing)**2
                 bc['PressureDropCoeff'] = CD*(1-beta)
 
             if settings['solver']['SolverName'] in ['interFoam', 'multiphaseInterFoam']:
-                # Make sure the first n-1 alpha values exist, and write the n-th one
-                # consistently for multiphaseInterFoam
                 sum_alpha = 0.0
                 alphas_new = {}
                 for i, m in enumerate(settings['fluidProperties']):
@@ -410,7 +426,6 @@ class CfdCaseWriterFoam:
                         sum_alpha += alpha
                 bc['VolumeFractions'] = alphas_new
 
-            # Copy turbulence settings
             bc['TurbulenceIntensity'] = bc['TurbulenceIntensityPercentage']/100.0
             physics = settings['physics']
             if physics['Turbulence'] == 'RANS' and physics['TurbulenceModel'] == 'SpalartAllmaras':
@@ -418,14 +433,9 @@ class CfdCaseWriterFoam:
                         bc['TurbulenceInletSpecification'] == 'intensityAndLengthScale':
                     if bc['BoundarySubType'] == 'uniformVelocityInlet' or bc['BoundarySubType'] == 'farField':
                         Uin = (bc['Ux']**2 + bc['Uy']**2 + bc['Uz']**2)**0.5
-
-                        # Turb Intensity and length scale
                         I = bc['TurbulenceIntensity']
                         l = bc['TurbulenceLengthScale']
-
-                        # Spalart Allmaras
                         bc['NuTilda'] = (3.0/2.0)**0.5 * Uin * I * l
-
                     else:
                         raise RuntimeError(
                             "Inlet type currently unsupported for calculating turbulence inlet conditions from "
@@ -443,7 +453,6 @@ class CfdCaseWriterFoam:
                 'ThermalBoundaryType': 'zeroGradient'
             }
 
-        # Assign any extruded patches as the appropriate type
         mr_objs = CfdTools.getMeshRefinementObjs(self.mesh_obj)
         for mr_id, mr_obj in enumerate(mr_objs):
             if mr_obj.Extrusion and mr_obj.ExtrusionType == "2DPlanar":
@@ -479,8 +488,6 @@ class CfdCaseWriterFoam:
             mat_prop = settings['fluidProperties'][0]
             initial_values['KinematicPressure'] = initial_values['Pressure'] / mat_prop['Density']
         if settings['solver']['SolverName'] in ['interFoam', 'multiphaseInterFoam']:
-            # Make sure the first n-1 alpha values exist, and write the n-th one
-            # consistently for multiphaseInterFoam
             sum_alpha = 0.0
             alphas_new = {}
             for i, m in enumerate(settings['fluidProperties']):
@@ -497,7 +504,7 @@ class CfdCaseWriterFoam:
         if initial_values['PotentialFlow']:
             if settings['solver']['SolverName'] in ['SRFSimpleFoam']:
                 raise RuntimeError("Selected solver does not support potential flow velocity initialisation.")
-            
+
         if initial_values['PotentialFlow'] or initial_values['PotentialFlowP']:
             if settings['solver']['SolverName'] in ['buoyantSimpleFoam', 'buoyantPimpleFoam', 'hisa']:
                 for bc in settings['boundaries']:
@@ -511,7 +518,6 @@ class CfdCaseWriterFoam:
 
         physics = settings['physics']
 
-        # Copy velocity
         if initial_values['UseInletUValues']:
             if initial_values['BoundaryU']:
                 inlet_bc = settings['boundaries'][initial_values['BoundaryU'].Label]
@@ -524,7 +530,6 @@ class CfdCaseWriterFoam:
             else:
                 raise RuntimeError("No boundary selected to copy initial velocity value from.")
 
-        # Copy pressure
         if initial_values['UseOutletPValue']:
             if initial_values['BoundaryP']:
                 outlet_bc = settings['boundaries'][initial_values['BoundaryP'].Label]
@@ -551,7 +556,6 @@ class CfdCaseWriterFoam:
             else:
                 raise RuntimeError("Inlet type not appropriate to determine initial temperature.")
 
-        # Copy turbulence settings
         if physics['TurbulenceModel'] is not None:
             if initial_values['UseInletTurbulenceValues']:
                 if initial_values['BoundaryTurb']:
@@ -581,35 +585,24 @@ class CfdCaseWriterFoam:
                             Uin = (inlet_bc['Ux']**2 +
                                    inlet_bc['Uy']**2 +
                                    inlet_bc['Uz']**2)**0.5
-
-                            # Turb Intensity (or Tu) and length scale
-                            I = inlet_bc['TurbulenceIntensityPercentage'] / 100.0  # Convert from percent to fraction
+                            I = inlet_bc['TurbulenceIntensityPercentage'] / 100.0
                             l = inlet_bc['TurbulenceLengthScale']
-                            Cmu = 0.09  # Standard turbulence model parameter
-
-                            # k omega, k epsilon
+                            Cmu = 0.09
                             k = 3.0/2.0*(Uin*I)**2
                             omega = k**0.5/(Cmu**0.25*l)
                             epsilon = (k**(3.0/2.0) * Cmu**0.75) / l
-
-                            # Spalart Allmaras
                             nuTilda = inlet_bc['NuTilda']
-
-                            # k omega (transition)
                             gammaInt = 1
                             if I <= 1.3:
                                 ReThetat = 1173.51 - (589.428 * I) + (0.2196 / (I**2))
                             else:
                                 ReThetat = 331.5 / ((I - 0.5658)**0.671)
-
-                            # Set the values
                             initial_values['k'] = k
                             initial_values['omega'] = omega
                             initial_values['epsilon'] = epsilon
                             initial_values['nuTilda'] = nuTilda
                             initial_values['gammaInt'] = gammaInt
                             initial_values['ReThetat'] = ReThetat
-
                         else:
                             raise RuntimeError(
                                 "Inlet type currently unsupported for copying turbulence initial conditions.")
@@ -618,9 +611,7 @@ class CfdCaseWriterFoam:
                             "Turbulence inlet specification currently unsupported for copying turbulence initial conditions")
                 else:
                     raise RuntimeError("No boundary selected to copy initial turbulence values from.")
-            #TODO: Check that the required values have actually been set for each turbulent model
 
-    # Function objects (reporting functions, probes)
     def processReportingFunctions(self):
         """ Compute any Function objects required before case build """
         settings = self.settings
@@ -645,22 +636,19 @@ class CfdCaseWriterFoam:
                 stf['InjectionRate'] = stf['InjectionRate']/settings['fluidProperties'][0]['Density']
                 stf['DiffusivityFixedValue'] = stf['DiffusivityFixedValue']/settings['fluidProperties'][0]['Density']
 
-    # Mesh related
     def processDynamicMeshRefinement(self):
         settings = self.settings
         settings['dynamicMeshEnabled'] = True
 
-        # Check whether cellLevel supported
         if self.mesh_obj.MeshUtility not in ['cfMesh', 'snappyHexMesh']:
             raise RuntimeError("Dynamic mesh refinement is only supported by cfMesh and snappyHexMesh")
-    
-        # Check whether 2D extrusion present
+
         mesh_refinements = CfdTools.getMeshRefinementObjs(self.mesh_obj)
         for mr in mesh_refinements:
             if mr.Extrusion:
                 if mr.ExtrusionType == '2DPlanar' or mr.ExtrusionType == '2DWedge':
                     raise RuntimeError("Dynamic mesh refinement will not work with 2D or wedge mesh")
-        
+
         settings['dynamicMesh'] = CfdTools.propsToDict(self.dynamic_mesh_refinement_obj)
         if isinstance(self.dynamic_mesh_refinement_obj.Proxy, CfdDynamicMeshRefinement.CfdDynamicMeshShockRefinement):
             settings['dynamicMesh']['Type'] = 'shock'
@@ -669,7 +657,6 @@ class CfdCaseWriterFoam:
         else:
             settings['dynamicMesh']['Type'] = 'interface'
 
-    # Zones
     def exportZoneStlSurfaces(self):
         for zo in self.zone_objs:
             for r in zo.ShapeRefs:
@@ -697,10 +684,7 @@ class CfdCaseWriterFoam:
                 pd['e1'] = po['e1']
                 pd['e3'] = po['e3']
             elif po['PorousCorrelation'] == 'Jakob':
-                # Calculate effective Darcy-Forchheimer coefficients
-                # This is for equilateral triangles arranged with the triangles pointing in BundleLayerNormal
-                # direction (direction of greater spacing - sqrt(3)*triangleEdgeLength)
-                pd['e1'] = po['SpacingDirection']  # OpenFOAM modifies to be orthog to e3
+                pd['e1'] = po['SpacingDirection']
                 pd['e3'] = po['TubeAxis']
                 spacing = po['TubeSpacing']
                 d0 = po['OuterDiameter']
@@ -721,14 +705,13 @@ class CfdCaseWriterFoam:
                     F[i] = Fi
                 pd['D'] = tuple(D)
                 pd['F'] = tuple(F)
-                # Currently assuming zero drag parallel to tube bundle (3rd principal dirn)
             else:
                 raise RuntimeError("Unrecognised method for porous baffle resistance")
             porousZoneSettings[po['Label']] = pd
 
     def processInitialisationZoneProperties(self):
         settings = self.settings
-        
+
         for zone_name in settings['initialisationZones']:
             z = settings['initialisationZones'][zone_name]
 
@@ -744,8 +727,6 @@ class CfdCaseWriterFoam:
                 del z['Temperature']
 
             if settings['solver']['SolverName'] in ['interFoam', 'multiphaseInterFoam']:
-                # Make sure the first n-1 alpha values exist, and write the n-th one
-                # consistently for multiphaseInterFoam
                 sum_alpha = 0.0
                 if 'VolumeFractions' in z:
                     alphas_new = {}
@@ -759,7 +740,7 @@ class CfdCaseWriterFoam:
                             alphas_new[alpha_name] = alpha
                             sum_alpha += alpha
                     z['VolumeFractions'] = alphas_new
-        
+
             if settings['solver']['SolverName'] in ['simpleFoam', 'porousSimpleFoam', 'pimpleFoam', 'SRFSimpleFoam']:
                 if 'Pressure' in z:
                     z['KinematicPressure'] = z['Pressure']/settings['fluidProperties'][0]['Density']
@@ -833,13 +814,11 @@ class CfdCaseWriterFoam:
                         'PatchNamesList': '"patch_'+str(bc_id+1)+'_.*"',
                         'PatchNamesListSlave': '"patch_'+str(slave_bc_id+1)+'_.*"'}
 
-        # Set up default BC for unassigned faces
         settings['createPatches']['defaultFaces'] = {
             'PatchNamesList': '"patch_0_0"',
             'PatchType': defaultPatchType
         }
 
-        # Assign any extruded patches as the appropriate type
         mr_objs = CfdTools.getMeshRefinementObjs(self.mesh_obj)
         for mr_id, mr_obj in enumerate(mr_objs):
             if mr_obj.Extrusion and mr_obj.ExtrusionType == "2DPlanar":
@@ -853,5 +832,4 @@ class CfdCaseWriterFoam:
                     'PatchType': "symmetry"
                 }
             else:
-                # Add others to default faces list
                 settings['createPatches']['defaultFaces']['PatchNamesList'] += ' "patch_0_'+str(mr_id+1) + '"'

@@ -18,7 +18,12 @@ RAS
 
     turbulence          on;
 
-    printCoeffs         on;
+    printCoeffs         %(physics/PrintCoeffs%);
+
+    %(physics/TurbulenceModel%)Coeffs
+    {
+%(physics/TurbulenceModelCoeffsBlock%)
+    }
 }
 %:DES LES
 simulationType LES;
@@ -29,7 +34,12 @@ LES
 
     turbulence          on;
 
-    printCoeffs         on;
+    printCoeffs         %(physics/PrintCoeffs%);
+
+    %(physics/TurbulenceModel%)Coeffs
+    {
+%(physics/TurbulenceModelCoeffsBlock%)
+    }
 
 %{%(physics/TurbulenceModel%)
 %:kOmegaSSTDES kOmegaSSTDDES SpalartAllmarasDES SpalartAllmarasDDES Smagorinsky kEqn WALE

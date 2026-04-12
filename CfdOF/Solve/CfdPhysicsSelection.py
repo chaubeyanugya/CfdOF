@@ -164,30 +164,21 @@ class CfdPhysicsModel:
         ):
             obj.Turbulence = "Laminar"
 
-        if addObjectProperty(
+        # 🔥 FORCE REMOVE OLD ENUM PROPERTY IF EXISTS
+        if "TurbulenceModel" in obj.PropertiesList:
+            obj.removeProperty("TurbulenceModel")
+
+        # ✅ ADD AS STRING PROPERTY
+        addObjectProperty(
             obj,
             "TurbulenceModel",
-            [
-                "kOmegaSST",
-                "kEpsilon",
-                "SpalartAllmaras",
-                "kOmegaSSTLM",
-                "kOmegaSSTDES",
-                "kOmegaSSTDDES",
-                "kOmegaSSTIDDES",
-                "SpalartAllmarasDES",
-                "SpalartAllmarasDDES",
-                "SpalartAllmarasIDDES",
-                "kEqn",
-                "Smagorinsky",
-                "WALE",
-            ],
-            "App::PropertyEnumeration",
+            "kOmegaSST",
+            "App::PropertyString",
             "Physics modelling",
             QT_TRANSLATE_NOOP("App::Property", "Turbulence model"),
-        ):
-            obj.TurbulenceModel = "kOmegaSST"
-            
+        )
+
+        obj.TurbulenceModel = "kOmegaSST"
         
         # Store user-modified turbulence coefficients (only overrides)
         addObjectProperty(
