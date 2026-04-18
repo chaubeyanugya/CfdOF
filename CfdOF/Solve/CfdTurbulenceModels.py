@@ -127,10 +127,9 @@ TURBULENCE_MODELS = {
 
 
 def getModelCoefficients(modelName):
-    """Return the default coefficients dict for a given model name."""
     for category in TURBULENCE_MODELS.values():
         if modelName in category:
-            return category[modelName].get("coeffs", {})
+            return category[modelName]["coeffs"].copy()  # .copy() prevents mutating master defaults
     return {}
 
 

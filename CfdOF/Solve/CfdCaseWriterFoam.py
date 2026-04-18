@@ -100,29 +100,79 @@ class CfdCaseWriterFoam:
        # ---------------------------------------------------------------
         # WEEK 4: Resolve turbulence model coefficients for template use
         # ---------------------------------------------------------------
+        # turb_model   = getattr(self.physics_model, 'TurbulenceModel', 'kOmegaSST')
+        # saved_coeffs = getattr(self.physics_model, 'TurbulenceModelCoeffs', {})
+        # print_coeffs = getattr(self.physics_model, 'PrintCoeffs', False)
+
+        # # Step 1: Get defaults
+        # defaults = getModelCoefficients(turb_model)
+        
+        # # Step 2: Ensure overrides is a dict
+        # try:
+        #     overrides = dict(saved_coeffs)
+        # except (TypeError, ValueError):
+        #     overrides = {}        
+            
+        # # Step 3: Merge correctly
+        # merged = defaults.copy()
+        # merged.update(overrides)   # user overrides win
+        
+        # # Step 4: Build FULL OpenFOAM block (IMPORTANT FIX)
+        # coeff_block = f"{turb_model}Coeffs\n{{\n"
+        
+        # for k, v in merged.items():
+        #     coeff_block += f"    {k} {(v)};\n"
+        
+        # coeff_block += "}\n"
+
+        # phys_settings['TurbulenceModelKeyword']   = getOfKeyword(turb_model)
+        # category = getattr(self.physics_model, 'Turbulence', 'RANS')
+        # phys_settings['TurbulenceSimulationType'] = getSimulationType(turb_model)
+        # phys_settings['TurbulenceModelCoeffsBlock'] = coeff_block
+        # phys_settings['PrintCoeffs']              = 'on' if print_coeffs else 'off'
+        
+        print("=" * 60)
+        print("🚀 CfdCaseWriterFoam: USING UPDATED TURBULENCE CODE v2")
+        print("=" * 60)
+        
         turb_model   = getattr(self.physics_model, 'TurbulenceModel', 'kOmegaSST')
         saved_coeffs = getattr(self.physics_model, 'TurbulenceModelCoeffs', {})
         print_coeffs = getattr(self.physics_model, 'PrintCoeffs', False)
-
+        
+        # Step 1: Get defaults (returns a .copy() so master dict is safe)
         defaults = getModelCoefficients(turb_model)
-
-        # Merge: user overrides win; fall back to defaults from CfdTurbulenceModels
-        merged_coeffs = {
-            k: float(saved_coeffs[k]) if k in saved_coeffs else v
-            for k, v in defaults.items()
-        }
-
-        # Pre-format coefficients as a single string block for the template engine
-        coeffs_lines = '\n'.join(
-            '        {:<20} {};'.format(k, v)
-            for k, v in merged_coeffs.items()
-        )
-
-        phys_settings['TurbulenceModelKeyword']   = getOfKeyword(turb_model)
-        phys_settings['TurbulenceSimulationType'] = getSimulationType(turb_model)
-        phys_settings['TurbulenceModelCoeffsBlock'] = coeffs_lines
-        phys_settings['PrintCoeffs']              = 'on' if print_coeffs else 'off'
+        print(f"[TURB] Model     : {turb_model}")
+        print(f"[TURB] Defaults  : {defaults}")
+        
+        # Step 2: Safely convert FreeCAD PropertyMap → plain Python dict
+        try:
+            overrides = dict(saved_coeffs)
+        except (TypeError, ValueError):
+            overrides = {}
+        print(f"[TURB] Overrides : {overrides}")
+        
+        # Step 3: Merge — defaults first, user overrides win
+        merged = defaults.copy()
+        merged.update(overrides)
+        print(f"[TURB] Merged    : {merged}")
+        
+        # Step 4: Build OpenFOAM coeffs block
+        coeff_block = f"{turb_model}Coeffs\n{{\n"
+        for k, v in merged.items():
+            coeff_block += f"    {k} {v};\n"
+        coeff_block += "}\n"
+        print(f"[TURB] Coeff block written:")
+        print(coeff_block)
+        print("=" * 60)
+        
+        # Step 5: Set simulation type correctly (pass MODEL name, not category)
+        category = getattr(self.physics_model, 'Turbulence', 'RANS')
+        phys_settings['TurbulenceModelKeyword']      = getOfKeyword(turb_model)
+        phys_settings['TurbulenceSimulationType']    = getSimulationType(turb_model)  # ← FIXED: was category
+        phys_settings['TurbulenceModelCoeffsBlock']  = coeff_block
+        phys_settings['PrintCoeffs']                 = 'on' if print_coeffs else 'fixed'
         # ---------------------------------------------------------------
+                
         # Validate BC labels
         bc_labels = [b.Label for b in self.bc_group]
         for i, l in enumerate(bc_labels):

@@ -241,9 +241,14 @@ class TaskPanelCfdPhysicsSelection:
             spinBox = QDoubleSpinBox()
             spinBox.setDecimals(6)
             spinBox.setRange(-1e9, 1e9)
+
             # Use saved override if present, otherwise fall back to default
-            
-            value = saved.get(coeff, defaultVal)
+            try:
+                value = float(saved.get(coeff, defaultVal))
+            except (TypeError, ValueError):
+                value = float(defaultVal)
+
+            spinBox.setValue(value)  # ← THIS WAS THE MISSING LINE
             layout.addRow(coeff, spinBox)
             self._coeffSpinBoxes[coeff] = spinBox
 
