@@ -157,10 +157,10 @@ class CfdCaseWriterFoam:
         print(f"[TURB] Merged    : {merged}")
         
         # Step 4: Build OpenFOAM coeffs block
-        coeff_block = f"{turb_model}Coeffs\n{{\n"
+        coeff_block = ""
         for k, v in merged.items():
             coeff_block += f"    {k} {v};\n"
-        coeff_block += "}\n"
+            
         print(f"[TURB] Coeff block written:")
         print(coeff_block)
         print("=" * 60)
