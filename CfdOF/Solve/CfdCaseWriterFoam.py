@@ -27,6 +27,7 @@
 ################################################################################
 
 import os
+import re
 import os.path
 from FreeCAD import Units, Vector
 from CfdOF import CfdTools
@@ -270,8 +271,12 @@ class CfdCaseWriterFoam:
 
         TemplateBuilder(self.case_folder, self.template_path, self.settings)
 
+        # Write computed turbulence init values into 0/k, 0/omega, 0/epsilon
+        self._writeTurbulenceInitFields()
+        
         # Update Allrun permission - will fail silently on Windows
         file_name = os.path.join(self.case_folder, "Allrun")
+        
         import stat
         s = os.stat(file_name)
         os.chmod(file_name, s.st_mode | stat.S_IEXEC)
@@ -883,3 +888,56 @@ class CfdCaseWriterFoam:
                 }
             else:
                 settings['createPatches']['defaultFaces']['PatchNamesList'] += ' "patch_0_'+str(mr_id+1) + '"'
+    
+    # Inside CfdCaseWriterFoam.py — add this helper method:
+    def _writeTurbulenceInitFields(self):
+        """Write 0/k, 0/epsilon, 0/omega using values from TurbulenceCalculator if present."""
+        turb_calc = None
+        for obj in self.analysis_obj.Group:
+            # Check for BOTH properties to ensure we grab the custom calculator,
+            # not a standard boundary condition (which uses 'DissipationRate').
+            if hasattr(obj, "TurbulentKineticEnergy") and hasattr(obj, "TurbulentDissipationRate"):
+                turb_calc = obj
+                break
+    
+        if turb_calc is None:
+            return  # No calculator present — leave existing templates as-is
+    
+        # Use getattr as a safe fallback just in case
+        k       = getattr(turb_calc, "TurbulentKineticEnergy", 0.0)
+        epsilon = getattr(turb_calc, "TurbulentDissipationRate", 0.0)
+        omega   = getattr(turb_calc, "SpecificDissipationRate", 0.0)
+    
+        turb_model = getattr(self.physics_model, "TurbulenceModel", "")
+    
+        if k > 0:
+            self._writeScalarField("k", k)
+    
+        if "Epsilon" in turb_model or "kEpsilon" in turb_model:
+            if epsilon > 0:
+                self._writeScalarField("epsilon", epsilon)
+    
+        if "Omega" in turb_model or "kOmega" in turb_model or "SST" in turb_model:
+            if omega > 0:
+                self._writeScalarField("omega", omega)
+
+    def _writeScalarField(self, field_name, value):
+        """Overwrite internalField value in 0/<field_name>."""
+        field_path = os.path.join(self.case_folder, "0", field_name)  # ← case_folder not case_path
+        if not os.path.exists(field_path):
+            cfdMessage(f"Field file 0/{field_name} not found; skipping.\n")
+            return
+    
+        with open(field_path, "r") as f:
+            content = f.read()
+    
+        content = re.sub(
+            r"(internalField\s+uniform\s+)[\d.eE+\-]+",
+            rf"\g<1>{value:.6e}",
+            content
+        )
+    
+        with open(field_path, "w") as f:
+            f.write(content)
+    
+        cfdMessage(f"Updated 0/{field_name} internalField = {value:.6e}\n")

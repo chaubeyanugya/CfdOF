@@ -62,6 +62,7 @@ class CfdOFWorkbench(Workbench):
         from CfdOF.Solve.CfdFluidMaterial import CommandCfdFluidMaterial
         from CfdOF.Solve.CfdSolverFoam import CommandCfdSolverFoam
         from CfdOF.Solve.CfdInitialiseFlowField import CommandCfdInitialiseInternalFlowField
+        from CfdOF.Solve.CfdTurbulenceCalculator import CommandCfdTurbulenceCalculator
         from CfdOF.Solve.CfdFluidBoundary import CommandCfdFluidBoundary
         from CfdOF.Solve.CfdZone import CommandCfdPorousZone
         from CfdOF.Solve.CfdZone import CommandCfdInitialisationZone
@@ -83,6 +84,7 @@ class CfdOFWorkbench(Workbench):
         FreeCADGui.addCommand('CfdOF_FluidMaterial', CommandCfdFluidMaterial())
         FreeCADGui.addCommand('CfdOF_FluidBoundary', CommandCfdFluidBoundary())
         FreeCADGui.addCommand('CfdOF_InitialiseInternal', CommandCfdInitialiseInternalFlowField())
+        FreeCADGui.addCommand('CfdOF_TurbulenceCalculator', CommandCfdTurbulenceCalculator())
         FreeCADGui.addCommand('CfdOF_PorousZone', CommandCfdPorousZone())
         FreeCADGui.addCommand('CfdOF_InitialisationZone', CommandCfdInitialisationZone())
         FreeCADGui.addCommand('CfdOF_SolverControl', CommandCfdSolverFoam())
@@ -103,6 +105,7 @@ class CfdOFWorkbench(Workbench):
                   ('T', 'CfdOF_GroupDynamicMeshRefinement',),
                   'CfdOF_PhysicsModel', 'CfdOF_FluidMaterial',
                   'CfdOF_FluidBoundary', 'CfdOF_InitialiseInternal',
+                  'CfdOF_TurbulenceCalculator',
                   'CfdOF_InitialisationZone', 'CfdOF_PorousZone',
                   'CfdOF_ReportingFunctions', 'CfdOF_ScalarTransportFunctions',
                   'CfdOF_SolverControl',
