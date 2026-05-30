@@ -32,6 +32,9 @@ import os
 import os.path
 import time
 from CfdOF.CfdConsoleProcess import CfdConsoleProcess
+from CfdOF.Solve.CfdSolverConfig import makeCfdSolverConfig
+from CfdOF.Solve.TaskPanelCfdSolverConfig import TaskPanelCfdSolverConfig
+
 if FreeCAD.GuiUp:
     import FreeCADGui
     from PySide import QtCore
@@ -42,6 +45,42 @@ if FreeCAD.GuiUp:
 translate = FreeCAD.Qt.translate
 
 class TaskPanelCfdSolverControl:
+    #def __init__(self, solver_runner_obj):
+    #    ui_path = os.path.join(CfdTools.getModulePath(), 'Gui', "TaskPanelCfdSolverControl.ui")
+    #    self.form = FreeCADGui.PySideUic.loadUi(ui_path)
+#
+    #    self.analysis_object = CfdTools.getActiveAnalysis()
+#
+    #    self.solver_runner = solver_runner_obj
+    #    self.solver_object = solver_runner_obj.solver
+#
+    #    # update UI
+    #    self.console_message = ''
+#
+    #    self.solver_object.Proxy.solver_process = CfdConsoleProcess(finished_hook=self.solverFinished,
+    #                                                                stdout_hook=self.gotOutputLines,
+    #                                                                stderr_hook=self.gotErrorLines)
+    #    self.Timer = QtCore.QTimer()
+    #    self.Timer.setInterval(1000)
+    #    self.Timer.timeout.connect(self.updateText)
+#
+    #    self.form.terminateSolver.clicked.connect(self.killSolverProcess)
+    #    self.form.terminateSolver.setEnabled(False)
+#
+    #    self.working_dir = CfdTools.getOutputPath(self.analysis_object)
+#
+    #    self.updateUI()
+#
+    #    # Connect Signals and Slots
+    #    self.form.pb_write_inp.clicked.connect(self.write_input_file_handler)
+    #    self.form.pb_edit_inp.clicked.connect(self.editSolverInputFile)
+    #    self.form.pb_run_solver.clicked.connect(self.runSolverProcess)
+    #    self.form.pb_paraview.clicked.connect(self.openParaview)
+#
+    #    self.Start = time.time()
+    #    self.Timer.start()
+    #
+    
     def __init__(self, solver_runner_obj):
         ui_path = os.path.join(CfdTools.getModulePath(), 'Gui', "TaskPanelCfdSolverControl.ui")
         self.form = FreeCADGui.PySideUic.loadUi(ui_path)
@@ -76,6 +115,23 @@ class TaskPanelCfdSolverControl:
 
         self.Start = time.time()
         self.Timer.start()
+
+        # --- STEP 6: REGISTER THE COMMAND AND ADD TO GUI ---
+        
+        # 1. Ensure a config object exists in the document
+        cfg_objs = [o for o in FreeCAD.ActiveDocument.Objects
+                    if hasattr(o, 'Proxy') and o.Proxy.__class__.__name__ == 'CfdSolverConfig']
+                    
+        if not cfg_objs:
+            self.solver_config_obj = makeCfdSolverConfig()
+            FreeCAD.ActiveDocument.recompute()
+        else:
+            self.solver_config_obj = cfg_objs[0]
+
+        # 2. Add the solver config panel as a second form in the task stack
+        self.config_panel = TaskPanelCfdSolverConfig(self.solver_config_obj)
+        self.form.layout().addWidget(self.config_panel.form)
+        # ----------------------------------------------------
 
     def updateUI(self):
         solverDirectory = os.path.join(self.working_dir, self.solver_object.InputCaseName)

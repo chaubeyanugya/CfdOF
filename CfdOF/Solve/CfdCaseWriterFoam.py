@@ -36,6 +36,9 @@ from CfdOF.CfdTools import cfdMessage
 from CfdOF.Mesh import CfdMeshTools
 from CfdOF.Mesh import CfdDynamicMeshRefinement
 from CfdOF.Solve.CfdTurbulenceModels import getModelCoefficients, getOfKeyword, getSimulationType
+import FreeCAD
+from CfdOF.Solve.CfdSchemeWriter import writeFvSchemes, writeFvSolution
+from CfdOF.Solve import CfdSolverConfig
 
 
 class CfdCaseWriterFoam:
@@ -273,6 +276,8 @@ class CfdCaseWriterFoam:
 
         # Write computed turbulence init values into 0/k, 0/omega, 0/epsilon
         self._writeTurbulenceInitFields()
+        
+        self.writeFvSchemesAndSolution()
         
         # Update Allrun permission - will fail silently on Windows
         file_name = os.path.join(self.case_folder, "Allrun")
@@ -941,3 +946,36 @@ class CfdCaseWriterFoam:
             f.write(content)
     
         cfdMessage(f"Updated 0/{field_name} internalField = {value:.6e}\n")
+    
+    def _getSolverConfigObject(self):
+        """Return the CfdSolverConfig doc object if present, else None."""
+        if not hasattr(FreeCAD, 'ActiveDocument') or not FreeCAD.ActiveDocument:
+            return None
+            
+        for obj in FreeCAD.ActiveDocument.Objects:
+            # Safely check if this is the Solver Config object
+            if hasattr(obj, 'Proxy') and type(obj.Proxy).__name__ == 'CfdSolverConfig':
+                return obj
+        return None
+
+    def writeFvSchemesAndSolution(self):
+        """Dynamically generates and writes system/fvSchemes and system/fvSolution"""
+        solver_name = self.getSolverName()
+        transient = (self.physics_model.Time == 'Transient')
+        turbulence_model = getattr(self.physics_model, "TurbulenceModel", "")
+
+        cfg = self._getSolverConfigObject() # Returns None if not found, forcing defaults
+        
+        schemes_content = writeFvSchemes(cfg, solver_name, transient, turbulence_model)
+        solution_content = writeFvSolution(cfg, solver_name, transient, turbulence_model)
+        
+        system_path = os.path.join(self.case_folder, 'system')
+        
+        with open(os.path.join(system_path, 'fvSchemes'), 'w', encoding='utf-8') as f:
+            f.write(schemes_content)
+            
+        with open(os.path.join(system_path, 'fvSolution'), 'w', encoding='utf-8') as f:
+            f.write(solution_content)
+            
+        from CfdOF.CfdTools import cfdMessage
+        cfdMessage("Dynamically wrote fvSchemes and fvSolution based on solver config.\n")
