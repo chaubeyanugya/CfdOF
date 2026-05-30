@@ -279,12 +279,50 @@ class CfdCaseWriterFoam:
         
         self.writeFvSchemesAndSolution()
         
-        # Update Allrun permission - will fail silently on Windows
-        file_name = os.path.join(self.case_folder, "Allrun")
-        
+        # --- DYNAMIC ALLRUN SCRIPT GENERATION ---
+        # Overwrite the template Allrun file to guarantee correct execution order
+        allrun_path = os.path.join(self.case_folder, "Allrun")
+        solver_exec = self.getSolverName()
+        mesher_exec = self.mesh_obj.MeshUtility
+
+        with open(allrun_path, "w", newline='\n') as f:
+            f.write("#!/bin/sh\n")
+            f.write("cd ${0%/*} || exit 1\n\n")
+            
+            if mesher_exec == "cfMesh":
+                f.write("echo 'Preparing cfMesh geometry...'\n")
+                f.write("cd ../meshCase\n")
+                # Automatically fix the .fms to .stl extension bug in meshDict
+                f.write("sed -i 's/\\.fms/\\.stl/g' system/meshDict 2>/dev/null || true\n")
+                # Bring the STL out of the subfolder into the root directory for cfMesh
+                f.write("cp constant/triSurface/*.stl . 2>/dev/null || true\n\n")
+                
+                f.write("echo 'Running cartesianMesh...'\n")
+                f.write("cartesianMesh\n\n")
+                
+                f.write("echo 'Copying mesh to solver directory...'\n")
+                f.write("cd ../case\n")
+                f.write("cp -r ../meshCase/constant/polyMesh constant/\n\n")
+                
+            elif mesher_exec == "snappyHexMesh":
+                f.write("echo 'Running snappyHexMesh workflow...'\n")
+                f.write("./Allmesh\n\n")
+
+            # Add parallel decomposition if required
+            if self.settings['solver']['Parallel']:
+                f.write("decomposePar -force\n")
+                f.write(f"mpirun -np {self.settings['solver']['ParallelCores']} {solver_exec} -parallel\n")
+                f.write("reconstructPar\n")
+            else:
+                f.write(f"{solver_exec}\n")
+
+        # Update Allrun permissions (fails silently on Windows, applies on Linux/macOS)
         import stat
-        s = os.stat(file_name)
-        os.chmod(file_name, s.st_mode | stat.S_IEXEC)
+        try:
+            s = os.stat(allrun_path)
+            os.chmod(allrun_path, s.st_mode | stat.S_IEXEC | stat.S_IRUSR | stat.S_IWUSR)
+        except Exception as e:
+            cfdMessage(f"Warning: Could not set executable permissions on Allrun: {e}\n")
 
         cfdMessage("Successfully wrote case to folder {}\n".format(self.working_dir))
         if self.progressCallback:
